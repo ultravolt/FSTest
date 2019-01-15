@@ -1,10 +1,12 @@
 ﻿using Microsoft.VisualBasic.FileIO;
+using Microsoft.VisualBasic.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static Test.TransactionContext;
 
 namespace Test
 {
@@ -23,10 +25,11 @@ namespace Test
 
     class Program
     {
+
         static void Main(string[] args)
         {
-          
 
+            
             using (var ctx = new TransactionContext("Data.csv"))
             {
                 //  var transactions = ctx.Transactions;
@@ -38,7 +41,7 @@ namespace Test
 
                 ctx.GenerateSalesSummary(assumedDate);
                 ctx.GenerateAssetsUnderManagementSummary();
-                ctx.GenerateBreakReport(assumedDate);
+                ctx.GenerateBreakReport();
                 ctx.GenerateInvestorProfitReport(assumedDate);
 
             }
