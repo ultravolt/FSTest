@@ -46,7 +46,7 @@ namespace Test
 
         public class Transaction
         {
-            enum Column : int
+            public enum Column : int
             {
                 TXN_DATE = 0,
                 TXN_TYPE = 1,
@@ -63,7 +63,10 @@ namespace Test
                 .Cast<ColumnAttribute>())
                 .OrderBy(x => x.Order)
                 .ToDictionary(x => x.Name, x => x.Order);
+            public Transaction()
+            {
 
+            }
             public Transaction(string source)
             {
                 this.source = source;

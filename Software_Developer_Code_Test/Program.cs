@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.VisualBasic.FileIO;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -67,10 +68,53 @@ namespace Test
     {
         static void Main(string[] args)
         {
+            var transactions = new List<TransactionContext.Transaction>();
+            using (var rdr = new TextFieldParser("Data.csv"))
+            {
+
+                rdr.TextFieldType = Microsoft.VisualBasic.FileIO.FieldType.Delimited;
+                rdr.Delimiters = new string[] { "," };
+                string[] values;
+                //Loop through all of the fields in the file. 
+                //If any lines are corrupt, report an error and continue parsing. 
+                int i = 0;
+                while (!rdr.EndOfData)
+                {
+                    try
+                    {
+                        values = rdr.ReadFields();
+                        if (i > 0)
+                        {
+                            var t = new TransactionContext.Transaction
+                            {
+                                Date = DateTime.Parse(values[(int)TransactionContext.Transaction.Column.TXN_DATE]),
+                                Type = values[(int)TransactionContext.Transaction.Column.TXN_TYPE],
+                                Shares = (int)(float.Parse(values[(int)TransactionContext.Transaction.Column.TXN_SHARES])),
+                                Price = float.Parse(values[(int)TransactionContext.Transaction.Column.TXN_PRICE].Trim(new char[] { '$', ' ' })),
+                                Fund = values[(int)TransactionContext.Transaction.Column.FUND],
+                                Investor = values[(int)TransactionContext.Transaction.Column.INVESTOR].Trim(new char[] { '"', ' ' }),
+                                SalesRepresentative = values[(int)TransactionContext.Transaction.Column.SALES_REP],
+
+
+                            };
+                            transactions.Add(t);
+                            Console.WriteLine(t);
+                        }
+                        i++;
+                        // Include code here to handle the row.
+                    }
+                    catch (MalformedLineException ex)
+                    {
+                        Console.Error.WriteLine(ex);
+                    }
+                }
+
+            }
+
 
             using (var ctx = new TransactionContext("Data.csv"))
             {
-                var transactions = ctx.Transactions;
+              //  var transactions = ctx.Transactions;
                 Debug.WriteLine(ctx.Transactions);
             }
         }
