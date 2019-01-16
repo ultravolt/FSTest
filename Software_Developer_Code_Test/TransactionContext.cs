@@ -11,46 +11,54 @@ using Microsoft.VisualBasic.Logging;
 
 namespace Test
 {
-    public class NegativeShareBalanceException : Exception
-    {
-        public string Fund { get; set; }
-        public float ShareBalance { get; set; }
-
-        public TransactionContext.Investor Investor{ get; set; }
-
-        public NegativeShareBalanceException(TransactionContext.Investor investor) : base (investor.ToString())
-        {
-            this.Investor = investor;
-        }
-
-        public NegativeShareBalanceException(TransactionContext.Investor investor, string fund, float shareBalance) : this(investor)
-        {
-            this.Fund = fund;
-            this.ShareBalance = shareBalance;
-        }
-    }
-
-    public class NegativeCashBalanceException : Exception
-    {
-        public string Fund { get; set; }
-        public float CashBalance { get; set; }
-
-        public TransactionContext.Investor Investor { get; set; }
-
-        public NegativeCashBalanceException(TransactionContext.Investor investor) : base(investor.ToString())
-        {
-            this.Investor = investor;
-        }
-
-        public NegativeCashBalanceException(TransactionContext.Investor investor, string fund, float cashBalance) : this(investor)
-        {
-            this.Fund = fund;
-            this.CashBalance = cashBalance;
-        }
-    }
-    public class TransactionContext : DbContext
+    [Serializable]
+    public class TransactionContext: IDisposable //: DbContext
     {
         const string STOCK_FUND = "STOCK FUND", BOND_FUND = "BOND FUND";
+
+        public class FundProfit
+        {
+            public float? Profit { get; set; }
+            public string Fund { get; set; }
+        }
+
+        public class NegativeShareBalanceException : Exception
+        {
+            public string Fund { get; set; }
+            public float ShareBalance { get; set; }
+
+            public TransactionContext.Investor Investor { get; set; }
+
+            public NegativeShareBalanceException(TransactionContext.Investor investor) : base(investor.ToString())
+            {
+                this.Investor = investor;
+            }
+
+            public NegativeShareBalanceException(TransactionContext.Investor investor, string fund, float shareBalance) : this(investor)
+            {
+                this.Fund = fund;
+                this.ShareBalance = shareBalance;
+            }
+        }
+
+        public class NegativeCashBalanceException : Exception
+        {
+            public string Fund { get; set; }
+            public float CashBalance { get; set; }
+
+            public TransactionContext.Investor Investor { get; set; }
+
+            public NegativeCashBalanceException(TransactionContext.Investor investor) : base(investor.ToString())
+            {
+                this.Investor = investor;
+            }
+
+            public NegativeCashBalanceException(TransactionContext.Investor investor, string fund, float cashBalance) : this(investor)
+            {
+                this.Fund = fund;
+                this.CashBalance = cashBalance;
+            }
+        }
 
         public class Investor
         {
@@ -59,13 +67,24 @@ namespace Test
             public float BondCashBalance { get; set; }
             public float StockCashBalance { get; internal set; }
             public float BondFundSharesHeld { get; internal set; }
+            public List<FundProfit> Profits { get; internal set; }
 
+            public Investor()
+            {
+                Profits = new List<FundProfit>();
+            }
             public override string ToString()
             {
                 return Name;
             }
         }
+
         public string FileName { get; set; }
+
+        public TransactionContext()
+        {
+
+        }
 
         public TransactionContext(string fileName)
         {
@@ -78,7 +97,7 @@ namespace Test
             //    INVESTOR - name of the owner of the shares being transacted
             //    SALES_REP - name of the sales rep advising the investor
 
-            TransactionQueue = new Queue<Transaction>();
+            TransactionList = new List<Transaction>();
             if (File.Exists(fileName))
                 using (var rdr = new TextFieldParser(fileName))
                 {
@@ -106,10 +125,10 @@ namespace Test
 
 
                                 };
-                                TransactionQueue.Enqueue(t);
+                                TransactionList.Add(t);
                                 //Console.WriteLine(t);
                             }
-                            i++;                            
+                            i++;
                         }
                         catch (MalformedLineException ex)
                         {
@@ -117,24 +136,29 @@ namespace Test
                         }
                     }
 
-                }        
+                }
         }
 
-        public void GenerateInvestorProfitReport(DateTime? requestDate = null)
+        public void GenerateInvestorProfitReport()
         {
-            if (requestDate == null) requestDate = DateTime.Now;
             //    4. Investor Profit:
             //        For each Investor and Fund, return net profit or loss on investment.
-            foreach(var investor in TransactionQueue.Select(x=>x.Investor).Distinct())
-                foreach(var fund in TransactionQueue.Where(x => x.Investor == investor).Select(x => x.Fund).Distinct())
+            foreach (var investor in TransactionList.Select(x => x.Investor).Distinct().Select(x => new Investor { Name = x }))
+                foreach (var fund in TransactionList.Where(x => x.Investor == investor.Name).Select(x => x.Fund).Distinct())
                 {
-                    var trans = TransactionQueue.Where(x => x.Investor == investor && x.Fund == fund);
+                    var trans = TransactionList.Where(x => x.Investor == investor.Name && x.Fund == fund).ToList();
+                    float? profit = null;
                     if (trans.Any(x => x.Type == nameof(Transaction.TypeEnum.SELL)))
                     {
-                        Console.WriteLine("");
+                        profit = trans.Sum(x => x.Value) * (int)Transaction.TypeEnum.SELL;
+                        investor.Profits.Add(new FundProfit { Profit = profit, Fund = fund });
                     }
+
+
+
+
                 }
-            throw new NotImplementedException();
+
         }
 
         public void GenerateBreakReport()
@@ -144,10 +168,10 @@ namespace Test
             //        generate a report that shows any errors (negative cash balances,
             //        negative share balance) by investor.
             this.BreakReport = new List<Exception>();
-            var investors = TransactionQueue.Select(x => x.Investor).Distinct().Select(x => new Investor { Name = x });
+            var investors = TransactionList.Select(x => x.Investor).Distinct().Select(x => new Investor { Name = x });
             foreach (var investor in investors)
             {
-                var trans = TransactionQueue.Where(x => x.Investor == investor.Name);
+                var trans = TransactionList.Where(x => x.Investor == investor.Name);
                 investor.StockFundSharesHeld = trans.Where(x => x.Fund == STOCK_FUND).Sum(x => x.ShareAdjust);
                 investor.BondFundSharesHeld = trans.Where(x => x.Fund == BOND_FUND).Sum(x => x.ShareAdjust);
                 if (investor.StockFundSharesHeld < 0)
@@ -163,10 +187,10 @@ namespace Test
 
                 if (investor.BondCashBalance < 0)
                     BreakReport.Add(new NegativeCashBalanceException(investor, BOND_FUND, investor.BondCashBalance));
-                
-                var ls=BreakReport.ToString();
+
+                var ls = BreakReport.ToString();
             }
-            
+
         }
 
         public void GenerateAssetsUnderManagementSummary()
@@ -175,58 +199,56 @@ namespace Test
             //        For each Sales Rep, generate a summary of the net amount held by
             //        investors across all funds.
             var assetsUnderManagementSummary = new Dictionary<string, Dictionary<string, float>>();
-            var salesReps = this.TransactionQueue
+            var salesReps = this.TransactionList
                 .Select(x => x.SalesRepresentative)
                 .Distinct();
             foreach (var salesRep in salesReps)
             {
-                var srt = this.TransactionQueue.Where(x => x.SalesRepresentative == salesRep);
+                var srt = this.TransactionList.Where(x => x.SalesRepresentative == salesRep);
                 var funds = srt.Select(x => x.Fund).Distinct().ToList();
-                var fsums=funds.ToDictionary(x => x, x => srt.Select(y => y.Value).Sum());
-                assetsUnderManagementSummary.Add(salesRep, fsums);
+                var fsums = funds.ToDictionary(x => x, x => srt.Where(y => y.Fund == x).Select(y => y.Value).Sum());
+                assetsUnderManagementSummary.Add(salesRep,(Dictionary<string, float>)fsums);
             }
             this.AssetsUnderManagementSummary = assetsUnderManagementSummary;
         }
 
-        public void GenerateSalesSummary(DateTime? requestDate=null)
+        public void GenerateSalesSummary(DateTime? requestDate = null)
         {
             //    1. Provide a Sales Summary:
             //        For each Sales Rep, generate Year to Date, Month to Date, Quarter to
             //        Date, and Inception to Date summary of cash amounts sold across all
             //        funds.
             if (requestDate == null) requestDate = DateTime.Now;
-            var transactionWithinRequestDateYear=this.TransactionQueue
-                .Where(x=>x.Date.Year==requestDate.Value.Year)
+            var transactionWithinRequestDateYear = this.TransactionList
+                .Where(x => x.Date.Year == requestDate.Value.Year)
                 .ToList();
-            this.BySalesRep=transactionWithinRequestDateYear.Select(x => x.SalesRepresentative).Distinct().ToDictionary(x => x, x=>transactionWithinRequestDateYear.Where(y => y.SalesRepresentative == x));
+            this.BySalesRep = transactionWithinRequestDateYear.Select(x => x.SalesRepresentative).Distinct().ToDictionary(x => x, x => transactionWithinRequestDateYear.Where(y => y.SalesRepresentative == x));
             this.BySalesRepYearToDate = BySalesRep.ToDictionary(x => x.Key, x => x.Value.Select(y => y.Value).Sum());
-            this.BySalesRepMonthToDate = BySalesRep.ToDictionary(x => x.Key, x => x.Value.Where(y=>y.Date.Month==requestDate.Value.Month).Select(y => y.Value).Sum());
-            this.BySalesRepInceptionToDate = BySalesRep.ToDictionary(x => x.Key, x => this.TransactionQueue.Where(y => y.SalesRepresentative == x.Key).Select(y=>y.Value).Sum());        
-            
+            this.BySalesRepMonthToDate = BySalesRep.ToDictionary(x => x.Key, x => x.Value.Where(y => y.Date.Month == requestDate.Value.Month).Select(y => y.Value).Sum());
+            this.BySalesRepInceptionToDate = BySalesRep.ToDictionary(x => x.Key, x => this.TransactionList.Where(y => y.SalesRepresentative == x.Key).Select(y => y.Value).Sum());
+
         }
 
         public new void Dispose()
         {
-            base.Dispose();
+            //base.Dispose();
         }
 
-       // public DbSet<Transaction> Transactions { get; set; }
-        public Queue<Transaction> TransactionQueue { get; set; }
-        public Dictionary<string, IEnumerable<Transaction>> BySalesRep { get; private set; }
-        public Dictionary<string, float> BySalesRepYearToDate { get; private set; }
-        public Dictionary<string, float> BySalesRepMonthToDate { get; private set; }
-        public Dictionary<string, float> BySalesRepInceptionToDate { get; private set; }
-        public Dictionary<string, Dictionary<string, float>> AssetsUnderManagementSummary { get; private set; }
-        public Dictionary<KeyValuePair<string, IEnumerable<Transaction>>, IEnumerable<Transaction>> NegativeShareBalance { get; private set; }
-        public Dictionary<KeyValuePair<string, IEnumerable<Transaction>>, IEnumerable<Transaction>> NegativeCashBalance { get; private set; }
-        public List<Exception> BreakReport { get; private set; }
+        // public DbSet<Transaction> Transactions { get; set; }
+        public List<Transaction> TransactionList { get; set; }
+        public Dictionary<string, IEnumerable<Transaction>> BySalesRep { get;  set; }
+        public Dictionary<string, float> BySalesRepYearToDate { get;  set; }
+        public Dictionary<string, float> BySalesRepMonthToDate { get;  set; }
+        public Dictionary<string, float> BySalesRepInceptionToDate { get;  set; }
+        public Dictionary<string, Dictionary<string, float>> AssetsUnderManagementSummary { get;  set; }
+        public List<Exception> BreakReport { get;  set; }
 
         public class Transaction
         {
-            public enum TypeEnum: int
+            public enum TypeEnum : int
             {
-                BUY=1,
-                SELL=-1
+                BUY = 1,
+                SELL = -1
             }
 
             public enum Column : int
@@ -239,8 +261,9 @@ namespace Test
                 INVESTOR = 5,
                 SALES_REP = 6
             }
-            
-            public static Dictionary<string, int> columns = typeof(Transaction)
+
+            public static Dictionary<string, int> columns =
+                typeof(Transaction)
                 .GetProperties()
                 .SelectMany(x => x.GetCustomAttributes(typeof(ColumnAttribute), false)
                 .Cast<ColumnAttribute>())
@@ -286,5 +309,7 @@ namespace Test
                 return string.Join(", ", new object[] { Date, Type, Shares, Price, Fund, Investor, SalesRepresentative }.Select(x => x.ToString()));
             }
         }
+
+
     }
 }
